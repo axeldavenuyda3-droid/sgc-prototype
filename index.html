@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SGC Grain Prototype</title>
+<style>
+:root{--bg:#f6f4ee;--card:#fff;--tx:#1d2b1f;--mut:#667;--ac:#2f7d3a;--bd:#d9d6c8;--er:#b3261e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14180f;--card:#1e251b;--tx:#eef2ea;--mut:#a3ad9e;--ac:#6fcf7c;--bd:#33402f;--er:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:12px;max-width:760px;margin-inline:auto}
+h1{font-size:1.2rem;margin:4px 0 10px}
+nav{display:flex;gap:6px;margin-bottom:12px}
+nav button{flex:1;padding:10px 4px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;font-size:.85rem}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:.8rem;color:var(--mut);margin:8px 0 3px}
+input,select{width:100%;padding:11px;font-size:1rem;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+.go{width:100%;margin-top:12px;padding:12px;border:0;border-radius:8px;background:var(--ac);color:#fff;font-size:1rem;font-weight:600}
+.msg{margin-top:10px;padding:10px;border-radius:8px;font-size:.9rem}
+.ok{background:rgba(47,125,58,.15)}.bad{background:rgba(179,38,30,.15);color:var(--er)}
+.stock{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stock div{text-align:center;padding:12px 4px;border:1px solid var(--bd);border-radius:8px}
+.stock b{display:block;font-size:1.4rem;color:var(--ac)}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--bd)}
+.wrap{overflow-x:auto}
+.slip{border:2px dashed var(--bd);padding:12px;margin-top:10px;font-family:ui-monospace,monospace;font-size:.85rem;white-space:pre-line}
+.sm{font-size:.8rem;color:var(--mut)}
+@media print{body *{visibility:hidden}.slip,.slip *{visibility:visible}.slip{position:absolute;left:0;top:0}}
+</style>
+</head>
+<body>
+<h1>🌾 Sintang Grains Cooperative</h1>
+<nav>
+<button class="on" data-t="clerk">Clerk</button>
+<button data-t="dash">Dashboard</button>
+<button data-t="buyer">Buyer Order</button>
+</nav>
+
+<section id="clerk">
+<div class="card">
+<b>Log Delivery</b>
+<label>Farmer ID (type to search)</label>
+<input id="fid" list="farmers" placeholder="e.g. F001" autocomplete="off">
+<datalist id="farmers"></datalist>
+<div id="fname" class="sm"></div>
+<label>Grain Type</label>
+<select id="grain"></select>
+<label>Quantity (kg)</label>
+<input id="qty" type="number" inputmode="numeric" min="1" placeholder="kg">
+<button class="go" id="save">Save Delivery (Enter)</button>
+<div id="cmsg"></div>
+</div>
+<div class="card">
+<b>Farmer delivery history</b>
+<div class="sm">Enter a Farmer ID above to see their deliveries.</div>
+<div class="wrap"><table id="hist"></table></div>
+</div>
+</section>
+
+<section id="dash" hidden>
+<div class="card"><b>Current Stock (kg)</b><div class="stock" id="stock" style="margin-top:8px"></div></div>
+<div class="card">
+<b>Monthly Board Summary</b>
+<div class="wrap"><table id="sum"></table></div>
+</div>
+<div class="card"><b>Recent Deliveries</b><div class="wrap"><table id="recent"></table></div></div>
+</section>
+
+<section id="buyer" hidden>
+<div class="card">
+<b>Place Order</b>
+<label>Buyer Name</label>
+<input id="bname" placeholder="e.g. Reyes Grain Trading">
+<label>Grain Type</label>
+<select id="bgrain"></select>
+<div class="sm" id="avail"></div>
+<label>Quantity (kg)</label>
+<input id="bqty" type="number" inputmode="numeric" min="1">
+<button class="go" id="order">Confirm Order</button>
+<div id="bmsg"></div>
+<div class="slip" id="slip" hidden></div>
+<button class="go" id="print" hidden style="background:var(--mut)">Print Slip</button>
+</div>
+</section>
+
+<script>
+const GRAINS=["Rice (Palay)","Corn","Mung Beans"];
+const farmers={F001:"Juan Dela Cruz",F002:"Maria Santos",F003:"Pedro Reyes",F004:"Ana Lopez"};
+const deliveries=[
+{id:1,f:"F001",g:"Rice (Palay)",kg:500,d:new Date()},
+{id:2,f:"F002",g:"Corn",kg:300,d:new Date()},
+{id:3,f:"F003",g:"Mung Beans",kg:120,d:new Date()}];
+const orders=[];
+let did=3,oid=0;
+const $=s=>document.querySelector(s);
+const stock=g=>deliveries.filter(x=>x.g===g).reduce((a,b)=>a+b.kg,0)-orders.filter(x=>x.g===g).reduce((a,b)=>a+b.kg,0);
+const fmt=d=>d.toLocaleString("en-PH",{dateStyle:"medium",timeStyle:"short"});
+function init(){
+$("#farmers").innerHTML=Object.entries(farmers).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+["#grain","#bgrain"].forEach(s=>$(s).innerHTML=GRAINS.map(g=>`<option>${g}</option>`).join(""));
+render();
+}
+function row(a){return"<tr>"+a.map(x=>`<td>${x}</td>`).join("")+"</tr>"}
+function render(){
+$("#stock").innerHTML=GRAINS.map(g=>`<div>${g}<b>${stock(g)}</b></div>`).join("");
+$("#recent").innerHTML="<tr><th>Time</th><th>Farmer</th><th>Grain</th><th>kg</th></tr>"+deliveries.slice(-8).reverse().map(x=>row([fmt(x.d),farmers[x.f],x.g,x.kg])).join("");
+const m=new Date().getMonth();
+$("#sum").innerHTML="<tr><th>Grain</th><th>Received</th><th>Ordered</th><th>On hand</th></tr>"+GRAINS.map(g=>{
+const r=deliveries.filter(x=>x.g===g&&x.d.getMonth()===m).reduce((a,b)=>a+b.kg,0);
+const o=orders.filter(x=>x.g===g&&x.d.getMonth()===m).reduce((a,b)=>a+b.kg,0);
+return row([g,r,o,stock(g)])}).join("");
+$("#avail").textContent="Available now: "+stock($("#bgrain").value)+" kg";
+hist();
+}
+function hist(){
+const f=$("#fid").value.trim().toUpperCase();
+$("#fname").textContent=farmers[f]||"";
+const list=deliveries.filter(x=>x.f===f).reverse();
+$("#hist").innerHTML=f&&list.length?"<tr><th>Date</th><th>Grain</th><th>kg</th></tr>"+list.map(x=>row([fmt(x.d),x.g,x.kg])).join(""):"";
+}
+function msg(el,t,ok){el.innerHTML=`<div class="msg ${ok?"ok":"bad"}">${t}</div>`}
+$("#fid").addEventListener("input",hist);
+function saveDelivery(){
+const f=$("#fid").value.trim().toUpperCase(),kg=parseInt($("#qty").value);
+if(!farmers[f])return msg($("#cmsg"),"Unknown Farmer ID.",false);
+if(!kg||kg<1)return msg($("#cmsg"),"Enter a valid quantity in kg.",false);
+deliveries.push({id:++did,f,g:$("#grain").value,kg,d:new Date()});
+msg($("#cmsg"),`Saved: ${farmers[f]} – ${kg} kg ${$("#grain").value}`,true);
+$("#qty").value="";render();$("#qty").focus();
+}
+$("#save").onclick=saveDelivery;
+$("#clerk").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();if(e.target.id==="fid")$("#grain").focus();else if(e.target.id==="grain")$("#qty").focus();else saveDelivery()}});
+$("#bgrain").onchange=render;
+$("#order").onclick=()=>{
+const b=$("#bname").value.trim(),g=$("#bgrain").value,kg=parseInt($("#bqty").value);
+if(!b||!kg||kg<1)return msg($("#bmsg"),"Fill in buyer name and quantity.",false);
+const s=stock(g);
+if(kg>s){$("#slip").hidden=true;$("#print").hidden=true;return msg($("#bmsg"),`❌ Order blocked: only ${s} kg of ${g} available, you asked for ${kg} kg.`,false)}
+const o={id:++oid,b,g,kg,d:new Date()};orders.push(o);
+msg($("#bmsg"),"✅ Order confirmed. Stock reserved.",true);
+$("#slip").textContent=`SINTANG GRAINS COOPERATIVE\nORDER CONFIRMATION\n--------------------------\nOrder #: SGC-${String(o.id).padStart(4,"0")}\nBuyer: ${b}\nGrain: ${g}\nQuantity: ${kg} kg\nDate: ${fmt(o.d)}\nStatus: STOCK VERIFIED`;
+$("#slip").hidden=false;$("#print").hidden=false;$("#bqty").value="";render();
+};
+$("#print").onclick=()=>window.print();
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
+["clerk","dash","buyer"].forEach(t=>$("#"+t).hidden=t!==b.dataset.t);render();
+});
+init();
+</script>
+</body>
+</html>
